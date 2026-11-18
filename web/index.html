@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smart Vehicle Safety Dashboard</title>
+<meta name="description" content="Single-screen vehicle safety dashboard: speed, fuel, engine temperature, obstacle distance and seatbelt.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232563eb'/%3E%3Cpath d='M14 40a18 18 0 1 1 36 0' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M32 40l9-12' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="app" data-view="monitor">
+
+  <!-- ============ TOP BAR ============ -->
+  <header class="top">
+    <div class="brand">
+      <span class="logo" data-ic="speed"></span>
+      <div>
+        <h1>Smart Vehicle Safety Dashboard</h1>
+        <p>Powered by C &middot; speed &middot; fuel &middot; engine temperature &middot; obstacles &middot; seatbelt</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <span class="link off" id="link" title="Live data comes from the C program (svsm --serve)"><i></i><b id="linkText">Offline</b></span>
+      <span class="state" id="state"><i></i><b id="stateText">Stopped</b></span>
+      <button class="icon-btn" id="btnTheme" title="Switch light / dark theme (T)" aria-label="Switch theme"></button>
+    </div>
+  </header>
+
+  <!-- ============ OVERALL STATUS ============ -->
+  <section class="status" id="status" data-level="ok" aria-live="polite">
+    <span class="status-ic" id="statusIcon"></span>
+    <div class="status-text">
+      <strong id="statusText">SAFE</strong>
+      <span id="statusSub">No active alerts</span>
+    </div>
+    <small class="status-label">Overall safety status</small>
+  </section>
+
+  <!-- ============ LIVE READINGS ============ -->
+  <section class="monitor" aria-label="Live readings">
+    <div class="sensors" id="sensors"></div>
+    <div class="trip" id="trip"></div>
+  </section>
+
+  <!-- ============ TABBED PANEL ============ -->
+  <section class="panel tabs-panel">
+    <div class="tabbar" role="tablist">
+      <button class="tab" role="tab" data-tab="alerts"  aria-selected="true"><span data-ic="warning"></span>Alerts <em id="alertCount">0</em></button>
+      <button class="tab" role="tab" data-tab="history" aria-selected="false"><span data-ic="history"></span>History</button>
+      <button class="tab" role="tab" data-tab="manual"  aria-selected="false"><span data-ic="sliders"></span>Manual</button>
+      <button class="tab" role="tab" data-tab="guide"   aria-selected="false"><span data-ic="info"></span>Guide</button>
+    </div>
+
+    <!-- alerts -->
+    <div class="pane" data-pane="alerts">
+      <ul class="alerts" id="alertList"></ul>
+    </div>
+
+    <!-- history -->
+    <div class="pane pane-flex" data-pane="history" hidden>
+      <div class="tools">
+        <input type="search" id="search" placeholder="Search..." aria-label="Search history">
+        <select id="filter" aria-label="Filter by severity">
+          <option value="ALL">All</option><option value="CRITICAL">Critical</option><option value="WARNING">Warning</option>
+        </select>
+        <button class="btn" id="btnLog" title="Download as alert_history.log"><span data-ic="download"></span>.log</button>
+        <button class="btn" id="btnCsv" title="Download as CSV"><span data-ic="download"></span>CSV</button>
+        <button class="btn danger" id="btnClear" title="Clear history"><span data-ic="trash"></span></button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th class="c-time">Time</th><th class="c-lvl">Level</th><th>What happened</th></tr></thead>
+          <tbody id="histBody"></tbody>
+        </table>
+        <p class="empty" id="histEmpty">No alerts yet. Press <b>Start</b> or try the <b>Demo</b>.</p>
+      </div>
+    </div>
+
+    <!-- manual -->
+    <div class="pane" data-pane="manual" hidden>
+      <p class="hint">Drag a slider to set a sensor yourself. Manual input switches on automatically.</p>
+      <div class="msliders">
+        <label class="slider"><span><i data-ic="speed"></i>Speed <b><u id="mSpeedV">0</u> km/h</b></span><input type="range" id="mSpeed" min="0" max="220" step="1"></label>
+        <label class="slider"><span><i data-ic="fuel"></i>Fuel <b><u id="mFuelV">100</u> %</b></span><input type="range" id="mFuel" min="0" max="100" step="0.5"></label>
+        <label class="slider"><span><i data-ic="temp"></i>Engine <b><u id="mTempV">25</u> &deg;C</b></span><input type="range" id="mTemp" min="-20" max="150" step="1"></label>
+        <label class="slider"><span><i data-ic="obstacle"></i>Obstacle <b><u id="mObstV">200</u> m</b></span><input type="range" id="mObst" min="0" max="200" step="0.5"></label>
+      </div>
+      <div class="presets">
+        <span>Quick scenarios:</span>
+        <button data-preset="normal">Normal</button>
+        <button data-preset="overspeed">Overspeed</button>
+        <button data-preset="fuel">Low fuel</button>
+        <button data-preset="overheat">Overheat</button>
+        <button data-preset="collision">Collision risk</button>
+        <button data-preset="belt">No seatbelt</button>
+        <button data-preset="all" class="danger">All faults</button>
+      </div>
+    </div>
+
+    <!-- guide -->
+    <div class="pane" data-pane="guide" hidden>
+      <div class="guide-grid" id="guide"></div>
+    </div>
+  </section>
+
+  <!-- ============ CONTROLS ============ -->
+  <aside class="panel side" aria-label="Controls">
+    <h2 class="sec"><span data-ic="sliders"></span>Controls</h2>
+
+    <button class="start" id="btnStart" title="Start / Stop (S)"><span data-ic="play" id="startIc"></span><span id="startText">Start</span><kbd>S</kbd></button>
+
+    <div class="quick">
+      <button class="q" id="btnReset"  title="Reset: full tank, parked (R)"><span data-ic="reset"></span>Reset<kbd>R</kbd></button>
+      <button class="q" id="btnDemo"   title="Demo: automatic 45-second drive (D)"><span data-ic="demo"></span>Demo<kbd>D</kbd></button>
+      <button class="q" id="btnAccel"  title="Faster: target speed +10 km/h (W)"><span data-ic="up"></span>Faster<kbd>W</kbd></button>
+      <button class="q" id="btnBrake"  title="Slower: target speed -10 km/h (X)"><span data-ic="down"></span>Slower<kbd>X</kbd></button>
+      <button class="q" id="btnRefuel" title="Refuel: fill the tank to 100% (F)"><span data-ic="fuel"></span>Refuel<kbd>F</kbd></button>
+    </div>
+
+    <label class="slider">
+      <span><i data-ic="speed"></i>Target speed <b><u id="thrVal">0</u> km/h</b></span>
+      <input type="range" id="throttle" min="0" max="220" step="5" value="0">
+    </label>
+
+    <div class="switches">
+      <label class="switch" title="Buckle or unbuckle the seatbelt (B)"><input type="checkbox" id="belt"><i></i><span><span data-ic="belt"></span>Seatbelt fastened<kbd>B</kbd></span></label>
+      <label class="switch" title="Set sensor values yourself (M)"><input type="checkbox" id="manualMode"><i></i><span><span data-ic="sliders"></span>Manual input<kbd>M</kbd></span></label>
+      <label class="switch" title="Beep when a new alert appears"><input type="checkbox" id="sound"><i></i><span><span data-ic="sound"></span>Alert sound</span></label>
+    </div>
+
+    <div class="rate"><span><i data-ic="clock"></i>Simulation speed</span>
+      <div class="seg" id="rateSeg"><button data-rate="1" class="on">1&times;</button><button data-rate="2">2&times;</button><button data-rate="4">4&times;</button></div>
+    </div>
+    <p class="notice" id="notice"></p>
+  </aside>
+
+  <!-- ============ PHONE NAVIGATION ============ -->
+  <nav class="nav" aria-label="Views">
+    <button data-view="monitor" class="on"><span data-ic="gauge"></span>Monitor</button>
+    <button data-view="control"><span data-ic="sliders"></span>Controls</button>
+    <button data-view="log"><span data-ic="history"></span>Alerts &amp; log</button>
+  </nav>
+</div>
+
+<div class="offline" id="offline" role="alert">
+  <b>C backend not running</b>
+  <span>In WSL / Linux run <code>make serve</code>, then open <a href="http://localhost:8080">localhost:8080</a>.</span>
+  <button id="retry" class="btn">Retry</button>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<dialog id="detail" aria-label="Sensor details"></dialog>
+
+<!-- asked every time the driver presses Start or Demo -->
+<dialog id="beltAsk" class="ask" aria-labelledby="askTitle">
+  <div class="ask-ic" data-ic="belt"></div>
+  <h2 id="askTitle">Fasten your seatbelt</h2>
+  <p>Is your seatbelt fastened before you start driving?</p>
+  <div class="ask-btns">
+    <button class="ask-yes" id="beltYes">Yes, fastened</button>
+    <button class="ask-no" id="beltNo">No, not yet</button>
+  </div>
+  <button class="ask-cancel" id="beltCancel">Cancel</button>
+</dialog>
+<script src="app.js"></script>
+</body>
+</html>
