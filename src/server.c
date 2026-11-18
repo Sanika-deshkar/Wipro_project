@@ -18,19 +18,39 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/select.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <sys/types.h>
 
+#ifdef _WIN32
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  typedef SOCKET sock_t;
+  #define SOCK_BAD     INVALID_SOCKET
+  #define sock_close   closesocket
+  #define SEND_FLAGS   0
+#else
+  #include <unistd.h>
+  #include <arpa/inet.h>
+  #include <netinet/in.h>
+  #include <sys/select.h>
+  #include <sys/socket.h>
+  #include <sys/time.h>
+  typedef int sock_t;
+  #define SOCK_BAD     (-1)
+  #define sock_close   close
+  #ifdef MSG_NOSIGNAL
+    #define SEND_FLAGS MSG_NOSIGNAL
+  #else
+    #define SEND_FLAGS 0
+  #endif
+#endif
+
+#include "platform.h"
 #include "server.h"
 #include "config.h"
 #include "vehicle.h"
@@ -62,12 +82,7 @@ static volatile sig_atomic_t g_stop = 0;
 
 static void on_signal(int sig) { (void)sig; g_stop = 1; }
 
-static long now_ms(void)
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
-}
+static long now_ms(void) { return plat_now_ms(); }
 
 static int tick_interval(void) { return SIM_TICK_MS / g.rate; }
 
@@ -213,22 +228,22 @@ static int read_history(HistRec **out, int max)
     if (max < 1) max = 1;
     if (max > HIST_MAX) max = HIST_MAX;
 
-    char *mem = NULL;
-    size_t sz = 0;
-    FILE *f = open_memstream(&mem, &sz);
-    if (!f)
-        return 0;
-    logger_show_recent(f, max);
-    fclose(f);
+    char *mem = logger_recent_text(max);
     if (!mem)
         return 0;
 
     HistRec *arr = calloc((size_t)max, sizeof *arr);
     int n = 0;
-    char *save = NULL;
-    for (char *ln = strtok_r(mem, "\n", &save); ln && arr && n < max; ln = strtok_r(NULL, "\n", &save))
+    for (char *ln = mem; *ln && arr && n < max; ) {
+        char *nl = strchr(ln, '\n');
+        if (nl)
+            *nl = '\0';
         if (parse_line(ln, &arr[n]))
             n++;
+        if (!nl)
+            break;
+        ln = nl + 1;
+    }
     free(mem);
     *out = arr;
     return n;
@@ -388,10 +403,10 @@ static void write_history_csv(Buf *b)
 /* HTTP plumbing                                                       */
 /* ------------------------------------------------------------------ */
 
-static void send_all(int fd, const char *p, size_t n)
+static void send_all(sock_t fd, const char *p, size_t n)
 {
     while (n > 0) {
-        ssize_t k = send(fd, p, n, MSG_NOSIGNAL);
+        int k = (int)send(fd, p, (int)n, SEND_FLAGS);
         if (k <= 0)
             return;
         p += k;
@@ -399,23 +414,23 @@ static void send_all(int fd, const char *p, size_t n)
     }
 }
 
-static void respond(int fd, int code, const char *ctype, const char *extra,
+static void respond(sock_t fd, int code, const char *ctype, const char *extra,
                     const char *body, size_t len)
 {
     const char *text = code == 200 ? "OK" : code == 204 ? "No Content" : code == 400 ? "Bad Request"
                      : code == 404 ? "Not Found" : "Server Error";
     char head[512];
     int n = snprintf(head, sizeof head,
-        "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n"
+        "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %lu\r\n"
         "Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n"
         "Access-Control-Allow-Methods: GET, OPTIONS\r\n%sConnection: close\r\n\r\n",
-        code, text, ctype, len, extra ? extra : "");
+        code, text, ctype, (unsigned long)len, extra ? extra : "");
     send_all(fd, head, (size_t)n);
     if (len)
         send_all(fd, body, len);
 }
 
-static void respond_buf(int fd, const char *ctype, const char *extra, Buf *b)
+static void respond_buf(sock_t fd, const char *ctype, const char *extra, Buf *b)
 {
     respond(fd, 200, ctype, extra, b->p ? b->p : "", b->len);
 }
@@ -434,7 +449,7 @@ static const char *mime_for(const char *path)
     return "application/octet-stream";
 }
 
-static void serve_static(int fd, const char *path)
+static void serve_static(sock_t fd, const char *path)
 {
     if (strstr(path, "..") || path[0] != '/') {
         respond(fd, 404, "text/plain", NULL, "Not found\n", 10);
@@ -461,7 +476,7 @@ static void serve_static(int fd, const char *path)
     free(data);
 }
 
-static void serve_api(int fd, const char *path, const char *query)
+static void serve_api(sock_t fd, const char *path, const char *query)
 {
     Buf b;
     b_init(&b);
@@ -497,10 +512,10 @@ static void serve_api(int fd, const char *path, const char *query)
     b_free(&b);
 }
 
-static void handle_connection(int fd)
+static void handle_connection(sock_t fd)
 {
     char req[4096];
-    ssize_t n = recv(fd, req, sizeof req - 1, 0);
+    int n = (int)recv(fd, req, (int)sizeof req - 1, 0);
     if (n <= 0)
         return;                                   /* idle / pre-connect socket */
     req[n] = '\0';
@@ -535,7 +550,7 @@ static void handle_connection(int fd)
 /* main loop                                                           */
 /* ------------------------------------------------------------------ */
 
-int server_run(int port, const char *web_dir, bool all_hosts)
+int server_run(int port, const char *web_dir, bool all_hosts, bool open_browser)
 {
     if (web_dir && *web_dir) {
         strncpy(g_web, web_dir, sizeof g_web - 1);
@@ -545,43 +560,58 @@ int server_run(int port, const char *web_dir, bool all_hosts)
     while (wl > 1 && g_web[wl - 1] == '/')
         g_web[--wl] = '\0';
 
-    struct sigaction sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sa_handler = on_signal;                    /* no SA_RESTART: select() must wake up */
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
+    signal(SIGINT, on_signal);                    /* loop wakes at least every 500 ms */
+    signal(SIGTERM, on_signal);
+#ifdef SIGPIPE
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     memset(&g, 0, sizeof g);
     vehicle_reset(&g.v);
     g.rate = 1;
     refresh();
 
-    int lfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (lfd < 0) {
-        perror("socket");
+    sock_t lfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (lfd == SOCK_BAD) {
+        fprintf(stderr, "Cannot create a network socket.\n");
         return 1;
     }
+#ifndef _WIN32
     int yes = 1;
-    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
+    setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof yes);
+#endif
 
+    /* try the requested port, then the next 19, so a busy port never blocks start-up */
     struct sockaddr_in addr;
-    memset(&addr, 0, sizeof addr);
-    addr.sin_family      = AF_INET;
-    addr.sin_port        = htons((uint16_t)port);
-    addr.sin_addr.s_addr = htonl(all_hosts ? INADDR_ANY : INADDR_LOOPBACK);
-
-    if (bind(lfd, (struct sockaddr *)&addr, sizeof addr) < 0 || listen(lfd, 16) < 0) {
-        fprintf(stderr, "Cannot listen on port %d: %s\n", port, strerror(errno));
-        close(lfd);
+    int first = port, bound = 0;
+    for (int tries = 0; tries < 20 && !bound; tries++, port++) {
+        memset(&addr, 0, sizeof addr);
+        addr.sin_family      = AF_INET;
+        addr.sin_port        = htons((uint16_t)port);
+        addr.sin_addr.s_addr = htonl(all_hosts ? INADDR_ANY : INADDR_LOOPBACK);
+        bound = (bind(lfd, (struct sockaddr *)&addr, sizeof addr) == 0);
+        if (bound)
+            break;
+    }
+    if (!bound || listen(lfd, 16) < 0) {
+        fprintf(stderr, "Cannot listen on ports %d-%d (are they all in use?)\n", first, first + 19);
+        sock_close(lfd);
         return 1;
     }
+    if (port != first)
+        printf("Port %d is busy - using port %d instead.\n", first, port);
 
     printf("%s v%s\n", APP_NAME, APP_VERSION);
     printf("C backend running ->  http://localhost:%d\n", port);
     printf("Serving web files from '%s', alert history in '%s'\n", g_web, logger_path());
     printf("Press Ctrl+C to stop.\n");
     fflush(stdout);
+
+    if (open_browser) {
+        char url[64];
+        snprintf(url, sizeof url, "http://localhost:%d", port);
+        plat_open_browser(url);
+    }
 
     long next_tick = now_ms() + tick_interval();
 
@@ -596,7 +626,7 @@ int server_run(int port, const char *web_dir, bool all_hosts)
         FD_ZERO(&rd);
         FD_SET(lfd, &rd);
         struct timeval tv = { wait / 1000, (wait % 1000) * 1000 };
-        int rc = select(lfd + 1, &rd, NULL, NULL, &tv);
+        int rc = select((int)lfd + 1, &rd, NULL, NULL, &tv);
 
         now = now_ms();
         if (ticking) {
@@ -612,17 +642,21 @@ int server_run(int port, const char *web_dir, bool all_hosts)
         }
 
         if (rc > 0 && FD_ISSET(lfd, &rd)) {
-            int cfd = accept(lfd, NULL, NULL);
-            if (cfd >= 0) {
-                struct timeval to = { 0, 300000 };          /* ignore silent pre-connects */
-                setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &to, sizeof to);
+            sock_t cfd = accept(lfd, NULL, NULL);
+            if (cfd != SOCK_BAD) {
+#ifdef _WIN32
+                DWORD to = 300;                              /* ms: ignore silent pre-connects */
+#else
+                struct timeval to = { 0, 300000 };
+#endif
+                setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&to, sizeof to);
                 handle_connection(cfd);
-                close(cfd);
+                sock_close(cfd);
             }
         }
     }
 
-    close(lfd);
+    sock_close(lfd);
     printf("\nServer stopped. Alert history saved in %s\n", logger_path());
     return 0;
 }

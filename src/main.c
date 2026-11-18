@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 #include "config.h"
 #include "vehicle.h"
@@ -23,17 +22,13 @@
 #include "logger.h"
 #include "terminal.h"
 #include "server.h"
+#include "platform.h"
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-static long now_ms(void)
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
-}
+static long now_ms(void) { return plat_now_ms(); }
 
 /** Evaluate, persist new alerts, and draw. Keeps @p prev up to date. */
 static void refresh(const Vehicle *v, SafetyReport *prev, const char *notice,
@@ -58,6 +53,7 @@ static void usage(const char *prog)
            "  --serve [PORT]   run the C backend + web dashboard (default port 8080)\n"
            "  --web DIR        folder with the web dashboard (default web)\n"
            "  --public         listen on all interfaces, not just localhost\n"
+           "  --open           open the dashboard in your browser (with --serve)\n"
            "  --no-color       disable ANSI colours\n"
            "  --version        show version\n"
            "  --help           show this help\n",
@@ -251,9 +247,10 @@ static int run_demo(int seconds)
 
 int main(int argc, char **argv)
 {
+    plat_init();
     int  demo_secs = 0, history_n = 0;
-    bool demo = false, history = false, color = isatty(STDOUT_FILENO);
-    bool serve = false, pub = false;
+    bool demo = false, history = false, color = plat_stdout_is_tty();
+    bool serve = false, pub = false, open_browser = false;
     int  port = 8080;
     const char *web_dir = "web";
     unsigned int seed = 0;
@@ -284,6 +281,8 @@ int main(int argc, char **argv)
             web_dir = argv[++i];
         } else if (!strcmp(argv[i], "--public")) {
             pub = true;
+        } else if (!strcmp(argv[i], "--open")) {
+            open_browser = true;
         } else if (!strcmp(argv[i], "--history")) {
             history = true;
             history_n = (i + 1 < argc && isdigit((unsigned char)argv[i + 1][0]))
@@ -312,7 +311,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "Invalid port.\n");
             return 2;
         }
-        return server_run(port, web_dir, pub);
+        return server_run(port, web_dir, pub, open_browser);
     }
     if (demo)
         return run_demo(demo_secs > 0 ? demo_secs : 40);

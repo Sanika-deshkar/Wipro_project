@@ -9,9 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-
+#include "platform.h"
 #include "logger.h"
 #include "config.h"
 
@@ -31,7 +29,7 @@ static void ensure_directory(void)
         return;                               /* file in current directory */
     *slash = '\0';
     if (dir[0] != '\0')
-        mkdir(dir, 0755);                     /* EEXIST is fine */
+        plat_mkdir(dir);                      /* already existing is fine */
 }
 
 int logger_init(const char *path)
@@ -127,4 +125,39 @@ int logger_clear(void)
     if (!f)
         return -1;
     return fclose(f) == 0 ? 0 : -1;
+}
+
+char *logger_recent_text(int n)
+{
+    if (n < 1)
+        n = 1;
+    char *out = calloc((size_t)n * LINE_MAX_LEN + 1, 1);
+    if (!out)
+        return NULL;
+
+    FILE *f = fopen(g_path, "r");
+    if (!f)
+        return out;                                   /* no history yet -> "" */
+
+    char (*ring)[LINE_MAX_LEN] = calloc((size_t)n, sizeof *ring);
+    if (!ring) {
+        fclose(f);
+        free(out);
+        return NULL;
+    }
+
+    long total = 0;
+    char line[LINE_MAX_LEN];
+    while (fgets(line, sizeof line, f)) {
+        strcpy(ring[total % n], line);
+        total++;
+    }
+    fclose(f);
+
+    long first = total > n ? total - n : 0;
+    for (long i = first; i < total; i++)
+        strcat(out, ring[i % n]);
+
+    free(ring);
+    return out;
 }

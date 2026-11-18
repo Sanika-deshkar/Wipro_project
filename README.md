@@ -45,19 +45,27 @@ All thresholds live in [`include/config.h`](include/config.h).
 
 ## Requirements
 
-* Linux (tested on Ubuntu, GCC 15 / GNU Make 4.4)
+* Linux, macOS or Windows (tested: Ubuntu / GCC 15 and native Windows 11; macOS code paths are untested)
 * `gcc` and `make` — on Debian/Ubuntu: `sudo apt install build-essential`
 * A terminal with ANSI colour support, at least 74 × 32 characters
 
-## Quick start (one command)
+## Quick start - works on any laptop
 
-| Where | Command | What happens |
+| Your computer | Do this | Needs installing? |
 |---|---|---|
-| Windows | double-click **`start.bat`** | builds in WSL, starts the C server, opens the browser |
-| WSL / Linux | `make start` | builds, starts the C server, opens the browser |
+| **Windows 10 / 11** | double-click **`start.bat`** | **Nothing** - uses the ready-made `dist\svsm.exe` |
+| **Linux** (Ubuntu, Debian, Fedora ...) | `sh start.sh` (or `make start`) | Nothing for x86-64 (uses `dist/svsm-linux-x64`); otherwise `build-essential` |
+| **macOS** | `sh start.sh` | Xcode command-line tools (`xcode-select --install`) |
+| **Windows with WSL** | `start.bat` also works, or `wsl -e make start` | Nothing |
 
-Press **Ctrl+C** (or close the window) to stop. `NO_BROWSER=1 make start` skips opening the browser;
-`PORT=9000 sh start.sh` uses another port.
+Every launcher starts the C server **and opens your browser by itself**. Close the window or press **Ctrl+C** to stop.
+If port 8080 is busy the server automatically uses the next free port (8081, 8082 ...) and opens that one.
+`NO_BROWSER=1` skips opening the browser; `PORT=9000 sh start.sh` picks another start port.
+
+On Windows, SmartScreen may warn about an unsigned program: click **More info -> Run anyway**.
+
+The same C source builds natively on all three systems (a small `platform.c` layer wraps Windows sockets / console
+and POSIX). The ready-made programs in [`dist/`](dist/) are rebuilt with `make dist`.
 
 ### From VS Code
 
@@ -74,6 +82,7 @@ make            # compile  -> build/svsm
 make run        # compile and start the interactive dashboard
 make demo       # 40-second scripted scenario (no keyboard needed)
 make start      # ONE command: build + C backend + open the browser
+make dist       # rebuild dist/svsm.exe (Windows) and dist/svsm-linux-x64
 make serve      # C backend + web dashboard at http://localhost:8080
 make test       # 27 unit tests
 make test-api   # start the server and test the HTTP API with curl (24 checks)
@@ -108,6 +117,7 @@ svsm --history [N]    print last N history records and exit
 svsm --serve [PORT]   C backend + web dashboard (default port 8080)
 svsm --web DIR        folder with the web files (default web)
 svsm --public         listen on all interfaces instead of localhost only
+svsm --open           with --serve: open the dashboard in your browser
 svsm --no-color       disable ANSI colours
 svsm --version | --help
 ```
@@ -162,7 +172,8 @@ history, and keyboard shortcuts (`S R W X B F M D T`). Thresholds come from `inc
 
 ```
 smart-vehicle-system/
-├── start.bat / start.sh     one-command launcher (Windows / Linux)
+├── start.bat / start.sh     one-command launcher (Windows / Linux, macOS)
+├── dist/                    ready-made svsm.exe (Windows) + svsm-linux-x64
 ├── Makefile                 build, run, test, debug, clean
 ├── README.md                this file
 ├── include/                 public headers (one per module)
@@ -173,6 +184,7 @@ smart-vehicle-system/
 │   ├── dashboard.h          renderer API
 │   ├── logger.h             alert history API
 │   ├── server.h             HTTP server API
+│   ├── platform.h           Windows / Linux / macOS portability layer
 │   └── terminal.h           raw keyboard input API
 ├── src/
 │   ├── main.c               CLI parsing, interactive loop, demo mode
@@ -182,6 +194,7 @@ smart-vehicle-system/
 │   ├── dashboard.c          ANSI panel renderer
 │   ├── logger.c             file-based alert history
 │   ├── server.c             HTTP server + JSON API for the web dashboard
+│   ├── platform.c           sockets/console/clock/browser differences per OS
 │   └── terminal.c           termios + select() non-blocking input
 ├── web/                     HTML/CSS/JS dashboard (front end for the C backend)
 ├── tests/test_monitor.c     unit tests (rules, simulator, logger)
