@@ -26,6 +26,9 @@ int  logger_log_changes(const SafetyReport *prev, const SafetyReport *cur,
 /** Print the last @p n records to @p out. Returns lines printed, -1 on error. */
 int  logger_show_recent(FILE *out, int n);
 
+/** Last @p n records as one malloc'd string ("" if none). Caller frees. */
+char *logger_recent_text(int n);
+
 /** Truncate the history file. Returns 0 on success. */
 int  logger_clear(void);
 

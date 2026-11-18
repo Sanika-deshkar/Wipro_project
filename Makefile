@@ -34,6 +34,11 @@ else
 CFLAGS  += -O2
 endif
 
+# building natively on Windows (MinGW / MSYS): sockets + shell libraries
+ifeq ($(OS),Windows_NT)
+LDFLAGS += -lws2_32 -lshell32
+endif
+
 SRCS     := $(wildcard $(SRC_DIR)/*.c)
 OBJS     := $(SRCS:$(SRC_DIR)/%.c=$(BUILD)/%.o)
 DEPS     := $(OBJS:.o=.d)
@@ -42,7 +47,25 @@ DEPS     := $(OBJS:.o=.d)
 LIB_OBJS  := $(filter-out $(BUILD)/main.o,$(OBJS))
 TEST_BIN  := $(BUILD)/test_monitor
 
-.PHONY: all start run demo serve test test-api debug history clean distclean help
+.PHONY: all start run demo serve test test-api debug history clean distclean help dist dist-windows dist-linux
+
+# ready-to-run programs for laptops without a compiler (see dist/)
+DIST     := dist
+WINCC    ?= x86_64-w64-mingw32-gcc      # apt install gcc-mingw-w64-x86-64
+
+dist: dist-windows dist-linux
+
+dist-windows:
+	@mkdir -p $(DIST)
+	@$(WINCC) -std=gnu11 -O2 -Wall -Wextra -I$(INC_DIR) -D__USE_MINGW_ANSI_STDIO=1 $(SRCS) \
+	    -o $(DIST)/svsm.exe -static -s -lws2_32 -lshell32
+	@echo "Built $(DIST)/svsm.exe  (Windows, no install needed)"
+
+dist-linux:
+	@mkdir -p $(DIST)
+	@$(CC) -std=c11 -O2 -Wall -Wextra -I$(INC_DIR) -D_POSIX_C_SOURCE=200809L $(SRCS) \
+	    -o $(DIST)/svsm-linux-x64 -static -s
+	@echo "Built $(DIST)/svsm-linux-x64  (Linux x86-64, no install needed)"
 
 all: $(BUILD)/$(TARGET)
 	@echo "Build complete -> $(BUILD)/$(TARGET)"
@@ -65,7 +88,7 @@ demo: all
 	@./$(BUILD)/$(TARGET) --demo 40 --seed 7
 
 start: all
-	@sh start.sh $(BUILD)/$(TARGET)
+	@./$(BUILD)/$(TARGET) --serve 8080 --open
 
 serve: all
 	@./$(BUILD)/$(TARGET) --serve 8080

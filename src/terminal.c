@@ -1,7 +1,82 @@
 /**
  * @file    terminal.c
- * @brief   termios based keyboard handling (Linux / POSIX).
+ * @brief   Keyboard handling: termios (Linux / macOS) or conio (Windows).
  */
+#ifdef _WIN32
+/* ====================================================================== */
+/* Windows: conio polling (ANSI output is enabled by plat_init())          */
+/* ====================================================================== */
+#include <conio.h>
+#include <io.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
+#include <windows.h>
+
+#include "terminal.h"
+
+static bool g_raw = false;
+static volatile sig_atomic_t g_interrupted = 0;
+
+static void on_signal(int sig)
+{
+    (void)sig;
+    g_interrupted = 1;
+}
+
+bool term_interrupted(void) { return g_interrupted != 0; }
+
+bool term_raw_enable(void)
+{
+    if (!_isatty(_fileno(stdin)))
+        return false;
+    g_raw = true;
+    signal(SIGINT, on_signal);
+    return true;
+}
+
+void term_raw_disable(void) { g_raw = false; }
+
+int term_read_key(int timeout_ms)
+{
+    DWORD start = GetTickCount();
+    for (;;) {
+        if (_kbhit()) {
+            int c = _getch();
+            if (c == 0 || c == 0xE0) {          /* arrow / function key: swallow */
+                (void)_getch();
+                return -1;
+            }
+            return c == 3 ? 'q' : c;            /* Ctrl+C -> quit */
+        }
+        if (g_interrupted)
+            return -1;
+        if (timeout_ms >= 0 && (int)(GetTickCount() - start) >= timeout_ms)
+            return -1;
+        Sleep(15);
+    }
+}
+
+bool term_prompt(const char *prompt, char *buf, int size)
+{
+    fputs(prompt, stdout);
+    fflush(stdout);
+    bool ok = fgets(buf, size, stdin) != NULL;
+    if (ok)
+        buf[strcspn(buf, "\r\n")] = '\0';
+    return ok;
+}
+
+void term_clear(void)
+{
+    fputs("\033[2J\033[H", stdout);
+    fflush(stdout);
+}
+
+#else
+/* ====================================================================== */
+/* Linux / macOS: termios + select()                                       */
+/* ====================================================================== */
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,3 +187,5 @@ void term_clear(void)
     fputs("\033[2J\033[H", stdout);
     fflush(stdout);
 }
+
+#endif /* _WIN32 */

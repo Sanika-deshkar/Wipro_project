@@ -225,6 +225,7 @@ To avoid writing the same line every second, the logger compares the *previous* 
 | Dashboard | `dashboard.h/.c` | Fixed-layout ANSI panel with bars, colours and alert list |
 | Logger | `logger.h/.c` | Append, view-last-N and clear of the history file |
 | Terminal | `terminal.h/.c` | Raw mode, non-blocking `select()` input, safe restore |
+| Platform | `platform.h/.c` | Portability layer: Winsock + UTF-8/ANSI console on Windows, POSIX clock/mkdir/browser elsewhere |
 | Server | `server.h/.c` | Single-threaded HTTP server (POSIX sockets): static files + JSON API for the web dashboard |
 | Main | `main.c` | Options, interactive loop, manual input, demo scenario, `--serve` entry |
 | Web front end | `web/index.html, style.css, app.js` | Browser display and controls; no logic of its own, talks to the C server |
@@ -321,6 +322,7 @@ the tank) so low-fuel behaviour can be demonstrated during a short viva or demo.
 | `make demo` | Build, then run a seeded 40-second scenario |
 | `make serve` | Build, then start the C backend and web dashboard on `http://localhost:8080` |
 | `make test` | Build and run the unit tests (`tests/test_monitor.c`) |
+| `make dist` | Cross-build `dist/svsm.exe` (MinGW-w64, static) and `dist/svsm-linux-x64` (static) so the project runs on laptops with no compiler |
 | `make test-api` | Build, start the server and test every HTTP endpoint with `curl` (`tests/test_api.sh`) |
 | `make debug` | Clean rebuild + tests with `-g -O0 -fsanitize=address,undefined` |
 | `make history` | Print the last 20 history records |
@@ -479,6 +481,8 @@ reading, alert message, trip statistic and history record is produced by `simula
 | `/api/cmd?a=...` | start, stop, reset, demo, accel, brake, refuel, target, belt, manual, rate, set, clear |
 | `/api/history?n=` | alert history, newest first |
 | `/api/export.log`, `/api/export.csv` | download the log file / CSV |
+
+Portability: the same sources build on Linux, macOS and Windows. `platform.c` hides the differences (Winsock start-up, UTF-8/ANSI console, monotonic clock, `mkdir`, opening the default browser); `terminal.c` uses `termios` on Unix and `conio` on Windows. On Windows the program was verified natively (terminal dashboard, HTTP API, history parsing, port fallback). If the chosen port is busy the server tries the next 19.
 
 Security notes: the server binds to `127.0.0.1` by default, accepts `GET` only, rejects any path containing `..`,
 bounds every buffer, and ignores idle pre-connections with a receive timeout.

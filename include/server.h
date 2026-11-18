@@ -20,11 +20,12 @@
 
 /**
  * Run the server until SIGINT/SIGTERM.
- * @param port       TCP port to listen on
+ * @param port       TCP port to listen on (the next 19 are tried if it is busy)
  * @param web_dir    folder holding index.html, style.css, app.js
  * @param all_hosts  false = listen on 127.0.0.1 only (default, safe)
+ * @param open_browser true = open the dashboard in the default browser once listening
  * @return 0 on clean shutdown, non-zero if the socket could not be opened
  */
-int server_run(int port, const char *web_dir, bool all_hosts);
+int server_run(int port, const char *web_dir, bool all_hosts, bool open_browser);
 
 #endif /* SERVER_H */
