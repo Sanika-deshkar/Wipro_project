@@ -1,22 +1,12 @@
-# ============================================================================
-#  Smart Vehicle Safety Monitoring and Dashboard System - Netlify Configuration
-# ============================================================================
+
+# Smart Vehicle Safety Monitoring and Dashboard System
 
 [build]
   publish = "web"
 
-# HTTP API Proxy to Render Backend:
-# After creating your Web Service on Render, uncomment the [[redirects]] block
-# below and replace YOUR-RENDER-SERVICE-NAME with your Render service URL.
-#
-# Example:
-#   to = "https://smart-vehicle-safety.onrender.com/api/:splat"
-#
-# This seamlessly forwards all /api/* requests from Netlify to your C backend
-# on Render, eliminating CORS and mixed-content issues.
-
-# [[redirects]]
-#   from = "/api/*"
-#   to = "https://YOUR-RENDER-SERVICE-NAME.onrender.com/api/:splat"
-#   status = 200
-#   force = true
+# Forward API requests to the Render C backend
+[[redirects]]
+  from = "/api/*"
+  to = "https://wipro-vehicle-backend.onrender.com/api/:splat"
+  status = 200
+  force = true
