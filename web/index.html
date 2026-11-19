@@ -143,10 +143,13 @@
   </nav>
 </div>
 
-<div class="offline" id="offline" role="alert">
-  <b>C backend not running</b>
-  <span>In WSL / Linux run <code>make serve</code>, then open <a href="http://localhost:8080">localhost:8080</a>.</span>
-  <button id="retry" class="btn">Retry</button>
+<div class="offline" id="offline" role="alert" hidden>
+  <b id="offlineTitle">C backend offline</b>
+  <span id="offlineStatus">Connecting to C backend... In local development run <code>make serve</code>. If hosted on Render, please allow up to 45s for the free instance to spin up.</span>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <button id="retry" class="btn">Retry</button>
+    <button id="btnSetApi" class="btn" style="font-size:12px;padding:5px 9px;">Set Backend URL</button>
+  </div>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <dialog id="detail" aria-label="Sensor details"></dialog>

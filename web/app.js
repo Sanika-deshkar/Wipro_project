@@ -115,36 +115,109 @@ function sample() {
 /* ------------------------- 4. link to the C backend ---------------------- */
 let BASE = null, online = false, fails = 0, busy = false;
 let lastTicks = -1, lastSeq = -1, lastJson = '';
+const API_STORAGE_KEY = 'svsm_backend_url';
 
-async function jget(path, timeout = 1500) {
+async function jget(path, timeout = 3500) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeout);
   try {
-    const r = await fetch(BASE + path, { signal: ctl.signal, cache: 'no-store' });
+    const url = (BASE || '') + path;
+    const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.json();
   } finally { clearTimeout(t); }
 }
 
-function setOnline(on) {
+function setOnline(on, msg) {
   online = on;
   $('offline').hidden = on;
   $('link').className = 'link ' + (on ? 'on' : 'off');
   $('linkText').textContent = on ? 'C backend' : 'Offline';
+  const statusEl = $('offlineStatus');
+  if (statusEl) {
+    if (msg) statusEl.textContent = msg;
+    else if (!on) statusEl.textContent = 'C backend not connected. In local development run make serve. If hosted on Render, please allow up to 45s for the free instance to spin up.';
+  }
 }
 
-/** Find the server: ?api=URL, then same origin, then localhost:8080. */
-async function findBackend() {
+function getBackendCandidates() {
   const cands = [];
   const q = new URLSearchParams(location.search).get('api');
-  if (q) cands.push(q.replace(/\/$/, ''));
-  if (location.protocol.startsWith('http')) cands.push('');
-  cands.push('http://localhost:8080', 'http://127.0.0.1:8080');
-  for (const c of cands) {
-    BASE = c;
-    try { applyState(await jget('/api/state', 1200), false); return true; } catch (e) { /* try next */ }
+  if (q && q.trim()) {
+    const clean = q.trim().replace(/\/$/, '');
+    try { localStorage.setItem(API_STORAGE_KEY, clean); } catch (e) {}
+    cands.push(clean);
   }
-  BASE = null; setOnline(false);
+  try {
+    const stored = localStorage.getItem(API_STORAGE_KEY);
+    if (stored && stored.trim() && !cands.includes(stored.trim().replace(/\/$/, ''))) {
+      cands.push(stored.trim().replace(/\/$/, ''));
+    }
+  } catch (e) {}
+  if (window.BACKEND_API_URL && !cands.includes(window.BACKEND_API_URL.replace(/\/$/, ''))) {
+    cands.push(window.BACKEND_API_URL.replace(/\/$/, ''));
+  }
+  if (location.protocol.startsWith('http') && !cands.includes('')) {
+    cands.push(''); // Netlify proxy or same-host deployment
+  }
+  cands.push('http://localhost:8080', 'http://127.0.0.1:8080');
+  return cands;
+}
+
+/**
+ * Probe a candidate URL. For remote cloud backends (e.g. Render), retries with
+ * exponential backoff to gracefully handle cold-start wakeups (usually 20-45s).
+ */
+async function probeCandidate(cand) {
+  const isLocal = cand.includes('localhost') || cand.includes('127.0.0.1');
+  const maxRetries = isLocal ? 1 : 4;
+  let delay = 1500;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const timeout = isLocal ? 1200 : (2500 + attempt * 2000);
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), timeout);
+
+    if (!isLocal && attempt > 1) {
+      setOnline(false, `Waking up C backend on Render... attempt ${attempt}/${maxRetries} (please wait)`);
+    }
+
+    try {
+      const url = (cand || '') + '/api/state';
+      const res = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+      clearTimeout(t);
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+      if (res.status === 404) return null; // immediate 404: skip candidate
+    } catch (e) {
+      clearTimeout(t);
+      if (isLocal) return null;
+    }
+
+    if (attempt < maxRetries) {
+      await new Promise(r => setTimeout(r, delay));
+      delay *= 2; // exponential backoff
+    }
+  }
+  return null;
+}
+
+/** Find the server: ?api=URL, stored URL, same origin (proxy), then localhost:8080. */
+async function findBackend() {
+  const cands = getBackendCandidates();
+  for (const c of cands) {
+    const data = await probeCandidate(c);
+    if (data) {
+      BASE = c;
+      applyState(data, false);
+      setOnline(true);
+      return true;
+    }
+  }
+  BASE = null;
+  setOnline(false);
   return false;
 }
 
@@ -152,16 +225,16 @@ async function poll() {
   if (busy) return;
   if (BASE === null) { if (!await findBackend()) return; refreshHistory(); return; }
   busy = true;
-  try { applyState(await jget('/api/state', 1200), false); }
-  catch (e) { if (++fails >= 3) setOnline(false); }
+  try { applyState(await jget('/api/state', 3500), false); }
+  catch (e) { if (++fails >= 3) { setOnline(false); BASE = null; } }
   finally { busy = false; }
 }
 
 /** Send a command to the C program and show the state it returns. */
 async function send(qs) {
   if (BASE === null) return;
-  try { applyState(await jget('/api/cmd?' + qs), true); }
-  catch (e) { if (++fails >= 3) setOnline(false); }
+  try { applyState(await jget('/api/cmd?' + qs, 3500), true); }
+  catch (e) { if (++fails >= 3) { setOnline(false); BASE = null; } }
 }
 
 /** Rate-limited send for sliders (keeps the newest value). */
@@ -484,7 +557,7 @@ function renderHistory() {
 function exportFile(path) {
   if (BASE === null) return;
   const a = document.createElement('a');
-  a.href = BASE + path;
+  a.href = (BASE || '') + path;
   document.body.appendChild(a); a.click(); a.remove();
 }
 
@@ -537,6 +610,22 @@ function bindControls() {
     if (soundOn) beep(1);
   };
   $('retry').onclick = () => { findBackend().then(ok => { if (ok) refreshHistory(); }); };
+  const btnSetApi = $('btnSetApi');
+  if (btnSetApi) {
+    btnSetApi.onclick = () => {
+      let current = '';
+      try { current = localStorage.getItem(API_STORAGE_KEY) || ''; } catch (e) {}
+      const url = prompt('Enter your Render backend URL (e.g. https://your-service.onrender.com):', current);
+      if (url !== null) {
+        const clean = url.trim().replace(/\/$/, '');
+        try {
+          if (clean) localStorage.setItem(API_STORAGE_KEY, clean);
+          else localStorage.removeItem(API_STORAGE_KEY);
+        } catch (e) {}
+        findBackend().then(ok => { if (ok) refreshHistory(); });
+      }
+    };
+  }
 
   [['mSpeed', 'speed', 'mSpeedV', 0], ['mFuel', 'fuel', 'mFuelV', 1], ['mTemp', 'temp', 'mTempV', 0], ['mObst', 'obst', 'mObstV', 1]].forEach(([id, key, lab, dp]) => {
     $(id).oninput = e => { $(lab).textContent = (+e.target.value).toFixed(dp); sendSoon('m-' + key, `a=set&manual=1&${key}=${e.target.value}`); };
