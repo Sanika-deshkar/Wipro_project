@@ -54,6 +54,46 @@ void sim_refuel(Vehicle *v)
     v->fuel_pct = 100.0f;
 }
 
+static const char *const SCENARIO_NAMES[SIM_SCENARIOS] = {
+    "City cruise", "Highway sprint", "Overheating engine", "Obstacle ahead", "Everything wrong"
+};
+
+const char *sim_scenario_name(int id)
+{
+    return (id >= 0 && id < SIM_SCENARIOS) ? SCENARIO_NAMES[id] : "?";
+}
+
+void sim_scenario(Vehicle *v, int id)
+{
+    v->temp_bias_c = 0.0f;
+    v->seatbelt_fastened = true;
+    switch (id) {
+    case 0: v->target_speed_kmh = 50;  v->fuel_pct = 70; v->obstacle_m = 120; break;
+    case 1: v->target_speed_kmh = 130; v->fuel_pct = 60; v->obstacle_m = 150; break;
+    case 2: v->target_speed_kmh = 90;  v->fuel_pct = 60; v->temp_bias_c = 35; v->obstacle_m = 150; break;
+    case 3: v->target_speed_kmh = 70;  v->fuel_pct = 60; v->obstacle_m = 8;   break;
+    case 4: v->target_speed_kmh = 150; v->fuel_pct = 4;  v->temp_bias_c = 35; v->obstacle_m = 5;
+            v->seatbelt_fastened = false; break;
+    default: return;
+    }
+    v->speed_kmh = v->target_speed_kmh;          /* jump straight into the situation */
+    v->engine_temp_c = 60.0f + 0.45f * v->speed_kmh + v->temp_bias_c;
+    vehicle_clamp(v);
+}
+
+void sim_heat(Vehicle *v, float delta_c)
+{
+    v->temp_bias_c += delta_c;
+    if (v->temp_bias_c < 0.0f)  v->temp_bias_c = 0.0f;
+    if (v->temp_bias_c > 60.0f) v->temp_bias_c = 60.0f;
+}
+
+void sim_obstacle_ahead(Vehicle *v, float metres)
+{
+    v->obstacle_m = metres;
+    vehicle_clamp(v);
+}
+
 void sim_step(Vehicle *v)
 {
     if (v->state != SIM_RUNNING)
@@ -78,7 +118,7 @@ void sim_step(Vehicle *v)
         v->fuel_pct -= SIM_FUEL_IDLE_PCT + v->speed_kmh * SIM_FUEL_PER_KMH;
 
     /* --- engine temperature ------------------------------------------- */
-    float temp_target = 60.0f + 0.45f * v->speed_kmh;
+    float temp_target = 60.0f + 0.45f * v->speed_kmh + v->temp_bias_c;
     v->engine_temp_c += (temp_target - v->engine_temp_c) * 0.10f
                         + frand(-0.4f, 0.4f);
 

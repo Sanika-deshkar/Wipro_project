@@ -7,6 +7,12 @@
 
 #include <stdbool.h>
 
+/** Special key codes returned by term_read_key() (above any ASCII value). */
+#define KEY_UP     1001
+#define KEY_DOWN   1002
+#define KEY_RIGHT  1003
+#define KEY_LEFT   1004
+
 /** Put the terminal in raw, no-echo mode. Safe to call repeatedly. */
 bool term_raw_enable(void);
 

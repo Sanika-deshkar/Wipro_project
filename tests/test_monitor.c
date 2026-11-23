@@ -11,6 +11,8 @@
 #include "monitor.h"
 #include "simulation.h"
 #include "logger.h"
+#include "ml.h"
+#include <math.h>
 
 static int g_run = 0, g_fail = 0;
 
@@ -154,12 +156,78 @@ static void test_logger(void)
     CHECK(n == 2, "history returns both records");
 }
 
+static void test_ml_bridge(void)
+{
+    puts("ML bridge helpers (no Python needed)");
+    Vehicle v = baseline(); char req[128]; MlPrediction p;
+
+    CHECK(ml_format_request(&v, req, sizeof req), "valid readings give a request line");
+    CHECK(!strcmp(req, "60.00 85.00 70.00 80.00 1\n"), "request line format is exact");
+
+    v.speed_kmh = NAN;
+    CHECK(!ml_format_request(&v, req, sizeof req), "NaN speed rejected");
+    v = baseline(); v.fuel_pct = 101;
+    CHECK(!ml_format_request(&v, req, sizeof req), "fuel > 100 rejected");
+    v = baseline(); v.speed_kmh = -1;
+    CHECK(!ml_format_request(&v, req, sizeof req), "negative speed rejected");
+    v = baseline(); v.engine_temp_c = INFINITY;
+    CHECK(!ml_format_request(&v, req, sizeof req), "infinite temperature rejected");
+    v = baseline(); v.obstacle_m = OBSTACLE_MAX_M + 1;
+    CHECK(!ml_format_request(&v, req, sizeof req), "obstacle beyond sensor range rejected");
+    CHECK(!ml_format_request(&v, req, 8), "too-small buffer rejected");
+
+    CHECK(ml_parse_reply("OK High 0.970 0.010 0.020 0.970", &p) && p.valid && p.level == ML_HIGH
+          && !strcmp(p.label, "High"), "parse OK High");
+    CHECK(ml_parse_reply("OK Low 1.000 1.000 0.000 0.000", &p) && p.level == ML_LOW, "parse OK Low");
+    CHECK(ml_parse_reply("OK Moderate 0.600 0.1 0.6 0.3", &p) && p.level == ML_MODERATE, "parse OK Moderate");
+    CHECK(!ml_parse_reply("ERR speed: 300 outside valid range", &p) && !p.valid, "ERR reply -> invalid");
+    CHECK(!ml_parse_reply("OK Banana 0.9 0 0 1", &p), "unknown class rejected");
+    CHECK(!ml_parse_reply("OK High 1.7 0 0 1", &p), "confidence > 1 rejected");
+    CHECK(!ml_parse_reply("garbage", &p), "garbage rejected");
+    CHECK(!ml_parse_reply("", &p), "empty reply rejected");
+
+    /* ML must not influence the rule engine: predictor off, rules still work */
+    Vehicle w = baseline(); SafetyReport r;
+    w.speed_kmh = 130;
+    CHECK(!ml_available(), "predictor not running in unit tests");
+    monitor_evaluate(&w, &r);
+    CHECK(r.alerts[ALERT_OVERSPEED].level == LEVEL_CRITICAL, "rule alerts work with ML off");
+    CHECK(!ml_predict(&w, &p) && !p.valid, "ml_predict is a no-op when ML is off");
+}
+
+static void test_scenarios(void)
+{
+    puts("Scenario presets and fault injection");
+    Vehicle v; SafetyReport r;
+    vehicle_reset(&v); sim_scenario(&v, 0); monitor_evaluate(&v, &r);
+    CHECK(r.overall == LEVEL_SAFE, "preset 1 (city cruise) is safe");
+    sim_scenario(&v, 1); monitor_evaluate(&v, &r);
+    CHECK(r.alerts[ALERT_OVERSPEED].level == LEVEL_CRITICAL, "preset 2 (highway) overspeed");
+    sim_scenario(&v, 2); monitor_evaluate(&v, &r);
+    CHECK(r.alerts[ALERT_OVERHEAT].active, "preset 3 (overheat) raises engine alert");
+    sim_scenario(&v, 3); monitor_evaluate(&v, &r);
+    CHECK(r.alerts[ALERT_OBSTACLE].level == LEVEL_WARNING, "preset 4 (obstacle) raises obstacle alert");
+    sim_scenario(&v, 4); monitor_evaluate(&v, &r);
+    CHECK(r.active_count == 5, "preset 5 (chaos) raises all five alerts");
+    sim_scenario(&v, 99);
+    CHECK(r.active_count == 5, "unknown preset is ignored");
+    vehicle_reset(&v); sim_heat(&v, 100);
+    CHECK(v.temp_bias_c == 60.0f, "heat fault is capped at +60 C");
+    sim_heat(&v, -200);
+    CHECK(v.temp_bias_c == 0.0f, "heat fault cannot go negative");
+    sim_obstacle_ahead(&v, 6.0f); monitor_evaluate(&v, &r);
+    CHECK(r.alerts[ALERT_OBSTACLE].active, "obstacle pop-up raises alert");
+    vehicle_reset(&v); sim_start(&v); sim_scenario(&v, 2);
+    for (int i = 0; i < 30; i++) sim_step(&v);
+    CHECK(v.engine_temp_c > TEMP_CRIT_C, "cooling fault keeps engine hot while driving");
+}
+
 int main(void)
 {
     puts("=== Smart Vehicle Safety System - unit tests ===\n");
     test_safe(); test_speed(); test_fuel(); test_temperature();
     test_obstacle(); test_seatbelt(); test_multiple();
-    test_simulation(); test_logger();
+    test_simulation(); test_logger(); test_ml_bridge(); test_scenarios();
 
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail ? 1 : 0;

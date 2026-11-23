@@ -55,6 +55,7 @@
 #include "config.h"
 #include "vehicle.h"
 #include "monitor.h"
+#include "ml.h"
 #include "simulation.h"
 #include "logger.h"
 
@@ -69,6 +70,7 @@
 typedef struct {
     Vehicle       v;
     SafetyReport  prev, cur;
+    MlPrediction  ml;                 /* independent of the rule engine */
     bool          manual, demo;
     int           rate;               /* 1, 2 or 4                    */
     unsigned long log_seq;            /* bumps whenever history changes */
@@ -92,6 +94,7 @@ static void refresh(void)
     monitor_evaluate(&g.v, &g.cur);
     g.log_seq += (unsigned long)logger_log_changes(&g.prev, &g.cur, &g.v);
     g.prev = g.cur;
+    ml_predict(&g.v, &g.ml);          /* ML risk, separate from the rules */
 }
 
 static void clear_run_stats(void)
@@ -360,7 +363,13 @@ static void write_state(Buf *b)
         b_add(b, "}");
         first = false;
     }
-    b_add(b, "}}}");
+    b_add(b, "}},\"ml\":");
+    if (g.ml.valid)
+        b_add(b, "{\"on\":true,\"label\":\"%s\",\"level\":%d,\"conf\":%.3f,\"probs\":[%.3f,%.3f,%.3f]}",
+              g.ml.label, (int)g.ml.level, g.ml.confidence, g.ml.probs[0], g.ml.probs[1], g.ml.probs[2]);
+    else
+        b_add(b, "{\"on\":%s}", ml_available() ? "true" : "false");
+    b_add(b, "}");
 }
 
 static void write_history_json(Buf *b, int n)

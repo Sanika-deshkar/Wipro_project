@@ -47,7 +47,7 @@ All thresholds live in [`include/config.h`](include/config.h).
 
 * Linux, macOS or Windows (tested: Ubuntu / GCC 15 and native Windows 11; macOS code paths are untested)
 * `gcc` and `make` — on Debian/Ubuntu: `sudo apt install build-essential`
-* A terminal with ANSI colour support, at least 74 × 32 characters
+* A terminal with ANSI colour support, at least 64 columns × 46 rows (60 rows for the roomy layout; the dashboard switches to a compact layout automatically); the optional ML risk prediction needs Python 3 with scikit-learn (`make ml-setup`)
 
 ## Quick start - works on any laptop
 
@@ -75,6 +75,17 @@ Other tasks: *Run terminal version*, *Build*, *Run unit tests*, *Run API tests*,
 You can also type `make start` in VS Code's integrated terminal (use a WSL terminal on Windows).
 To view the dashboard inside VS Code: **Ctrl+Shift+P > Simple Browser: Show > http://localhost:8080**.
 
+## One-line start (any computer)
+
+| System | Command | What it does |
+|---|---|---|
+| **Windows (cmd / PowerShell)** | `run.bat` | builds with MinGW if present, else uses the ready-made `dist\svsm.exe`; sets up Python + the ML model if Python exists |
+| **Linux / macOS / WSL** | `sh run.sh` | builds with make/cc (or uses `dist/svsm-linux-x64`), creates a private `.venv` for the ML packages |
+
+Options for both: `demo` (40-second scripted drive), `web` (browser dashboard), `noml` (rules only).
+Without Python the program still runs with rule-based monitoring; the ML panel then shows "UNAVAILABLE".
+The screen animates smoothly (about 15 frames per second) while the simulation ticks once per second.
+
 ## Build and run
 
 ```bash
@@ -84,13 +95,37 @@ make demo       # 40-second scripted scenario (no keyboard needed)
 make start      # ONE command: build + C backend + open the browser
 make dist       # rebuild dist/svsm.exe (Windows) and dist/svsm-linux-x64
 make serve      # C backend + web dashboard at http://localhost:8080
-make test       # 27 unit tests
-make test-api   # start the server and test the HTTP API with curl (24 checks)
+make test       # 46 unit checks (rules, simulator, logger, ML helpers)
+make test-api   # start the server and test the HTTP API with curl (26 checks)
 make debug      # clean rebuild + tests with AddressSanitizer / UBSan
 make history    # print the last 20 alert-history records
+make ml-setup   # pip install the Python ML dependencies
+make ml-train   # train + evaluate the ML model -> ml/reports/
+make ml-test    # 25 Python tests of the predictor
+make test-ml    # 41 C <-> Python integration checks
+make test-all   # every test suite
+make linux-demo # scripted Linux demonstration (gcc, make, shell, logs, ML)
 make clean      # remove build/        (distclean also removes logs/)
 make help       # list targets
 ```
+
+## ML risk prediction (Python / scikit-learn)
+
+A Random Forest trained on `ml/data/vehicle_risk_dataset.csv` (10,000 rows) predicts an
+overall risk level **Low / Moderate / High** from speed, engine temperature, fuel, obstacle
+distance and seatbelt. It is shown on the dashboard in its **own panel, separate from the
+rule-based alerts**, and is optional: without Python the rule-based system works as before.
+
+```bash
+make ml-setup && make ml-train      # one-time: install packages, train, write ml/reports/
+make run                            # dashboard now has the "ML RISK PREDICTION" row
+./build/svsm --predict 150 113 3 2 0   # one prediction: speed temp fuel obstacle belt(0/1)
+./build/svsm --no-ml                # rules only
+```
+
+Test accuracy 99.6 % (macro F1 0.997); see [`ml/reports/metrics.md`](ml/reports/metrics.md) and
+section 22 of [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md). Python tests use `unittest`
+(`make ml-test`). Options: `--ml-python CMD`, `--ml-script FILE`, env `SVSM_PYTHON`.
 
 ## Keyboard controls (interactive mode)
 
@@ -101,6 +136,9 @@ make help       # list targets
 | `W` / `X` | Target speed +10 / −10 km/h | `M` | Manual sensor input |
 | `H` | View alert history | `C` | Clear alert history |
 | `Q` | Quit | `Ctrl+C` | Quit (terminal is restored safely) |
+| `↑` / `↓` | Same as `W` / `X` (faster / slower) | `←` / `→` | Toggle seatbelt |
+| `1`-`5` | Scenario presets: City, Highway, Overheat, Obstacle, Chaos | `P` | Pause / resume the ML panel |
+| `T` / `Y` | Inject engine cooling fault +10 / -10 °C | `O` | Obstacle appears 6 m ahead |
 
 **Quick tour:** press `B` (belt on), `S` (start), then tap `W` repeatedly and watch
 Overspeed, rising engine temperature and falling fuel trigger alerts. Press `H` to see

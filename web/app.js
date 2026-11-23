@@ -248,6 +248,8 @@ function sendSoon(key, qs) {
   }, 90);
 }
 
+let mlState = { on: false };
+
 function applyState(j, fromCmd) {
   const prevTicks = lastTicks, wasDemo = demoOn;
   fails = 0;
@@ -257,6 +259,7 @@ function applyState(j, fromCmd) {
   running = j.running; manual = j.manual; demoOn = j.demo; rate = j.rate;
   maxSpeed = j.max_speed; avgSpeed = j.avg_speed;
   report = { a: j.report.alerts, count: j.report.count, overall: j.report.overall };
+  mlState = j.ml || { on: false };
 
   if (j.ticks < prevTicks) samples = [];                    // simulation was reset
   if (j.ticks !== prevTicks || fromCmd || !samples.length) sample();
@@ -327,6 +330,13 @@ function showView(name) {
 
 function render() {
   const rep = report;
+  const mlc = $('mlChip');                                  // ML prediction (independent of the rules)
+  if (mlc) {
+    if (mlState.label) {
+      mlc.dataset.level = ['ok', 'warn', 'crit'][mlState.level];
+      $('mlText').textContent = `${mlState.label} (${Math.round(mlState.conf * 100)}%)`;
+    } else { mlc.dataset.level = 'off'; $('mlText').textContent = 'n/a'; }
+  }
   announceNewAlerts(rep);
 
   /* overall banner */

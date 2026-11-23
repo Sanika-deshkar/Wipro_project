@@ -19,6 +19,12 @@ long plat_now_ms(void);
 /** Create a directory; silently succeeds if it already exists. */
 void plat_mkdir(const char *path);
 
+/** Height of the terminal window in rows (0 if unknown / not a terminal). */
+int  plat_term_rows(void);
+
+/** Width of the terminal window in columns (0 if unknown / not a terminal). */
+int  plat_term_cols(void);
+
 bool plat_stdout_is_tty(void);
 bool plat_stdin_is_tty(void);
 

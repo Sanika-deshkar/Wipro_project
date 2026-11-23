@@ -18,6 +18,7 @@ void vehicle_reset(Vehicle *v)
     v->obstacle_m        = OBSTACLE_MAX_M;
     v->seatbelt_fastened = false;
     v->target_speed_kmh  = 0.0f;
+    v->temp_bias_c       = 0.0f;
     v->odometer_km       = 0.0f;
     v->ticks             = 0;
     v->state             = SIM_STOPPED;

@@ -1,0 +1,108 @@
+{
+  "dataset": "ml/data/vehicle_risk_dataset.csv",
+  "preprocessing": {
+    "rows_raw": 10000,
+    "missing_values": 0,
+    "bad_labels": 0,
+    "out_of_range_rows": 0,
+    "duplicate_rows_kept": 0,
+    "rows_clean": 10000,
+    "class_counts": {
+      "Low": 1402,
+      "Moderate": 3696,
+      "High": 4902
+    }
+  },
+  "split": {
+    "train_rows": 8000,
+    "test_rows": 2000,
+    "test_size": 0.2,
+    "stratified": true,
+    "random_state": 42
+  },
+  "feature_selection": {
+    "mutual_information": {
+      "speed": 0.1911086353699718,
+      "temperature": 0.1237725650197985,
+      "fuel": 0.01622487218184321,
+      "distance": 0.0457157744634098,
+      "seatbelt": 0.10779736035548149
+    },
+    "correlation_with_risk": {
+      "speed": 0.5275417017737887,
+      "temperature": 0.3898125177077991,
+      "fuel": -0.06310460092747891,
+      "distance": -0.18135305574147909,
+      "seatbelt": -0.4323252448128393
+    },
+    "random_forest_importance": {
+      "speed": 0.3476932809250287,
+      "temperature": 0.2638944349442896,
+      "fuel": 0.04302553958885557,
+      "distance": 0.1281127983442667,
+      "seatbelt": 0.21727394619755946
+    }
+  },
+  "selected_model": "RandomForestClassifier(n_estimators=200, max_depth=14, min_samples_leaf=2)",
+  "random_forest": {
+    "accuracy": 0.996,
+    "precision_macro": 0.9965257776001543,
+    "recall_macro": 0.9971679876280688,
+    "f1_macro": 0.9968383328689233,
+    "cv5_accuracy_mean": 0.9970000000000001,
+    "cv5_accuracy_std": 0.0012119199643540978
+  },
+  "decision_tree_baseline": {
+    "accuracy": 0.996,
+    "precision_macro": 0.9966251498503335,
+    "recall_macro": 0.9970570636915118,
+    "f1_macro": 0.9968373032628763,
+    "cv5_accuracy_mean": 0.998,
+    "cv5_accuracy_std": 0.0009185586535436994
+  },
+  "per_class": {
+    "Low": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 281.0
+    },
+    "Moderate": {
+      "precision": 0.9906040268456375,
+      "recall": 0.9986468200270636,
+      "f1-score": 0.9946091644204852,
+      "support": 739.0
+    },
+    "High": {
+      "precision": 0.9989733059548255,
+      "recall": 0.9928571428571429,
+      "f1-score": 0.9959058341862845,
+      "support": 980.0
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "Low",
+      "Moderate",
+      "High"
+    ],
+    "rows_true_cols_pred": [
+      [
+        281,
+        0,
+        0
+      ],
+      [
+        0,
+        738,
+        1
+      ],
+      [
+        0,
+        7,
+        973
+      ]
+    ]
+  },
+  "sklearn_version": "1.8.0"
+}

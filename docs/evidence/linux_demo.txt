@@ -1,0 +1,409 @@
+# Linux demonstration transcript (scripts/linux_demo.sh)
+# Produced in Ubuntu under WSL 2 (GCC 15.2.0, GNU Make 4.4.1). The Ubuntu image had no pip, so the
+# Python/scikit-learn side was a Windows Python 3.13 interpreter called through WSL interop
+# (SVSM_PYTHON). Regenerate natively with: make ml-setup && make linux-demo | tee docs/evidence/linux_demo.txt
+
+
+==================================================================
+ STEP 1: Environment (terminal commands)
+==================================================================
+$ uname -srm
+Linux 6.18.33.1-microsoft-standard-WSL2 x86_64
+$ gcc --version | head -1
+gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0
+$ make --version | head -1
+GNU Make 4.4.1
+$ /mnt/c/Users/Omen/AppData/Local/Programs/Python/Python313/python.exe --version
+Python 3.13.9
+$ /mnt/c/Users/Omen/AppData/Local/Programs/Python/Python313/python.exe -c 'import sklearn, pandas; print("scikit-learn", sklearn.__version__, "| pandas", pandas.__version__)'
+scikit-learn 1.8.0 | pandas 2.3.3
+$ pwd && ls
+/mnt/d/Wipro/smart-vehicle-system
+Dockerfile
+Makefile
+README.md
+build
+build
+dist
+docs
+include
+logs
+ml
+netlify.toml
+scripts
+src
+start.bat
+start.sh
+tests
+vehicle_risk_dataset.csv
+web
+
+==================================================================
+ STEP 2: Project layout (file handling: ls, wc, find)
+==================================================================
+$ ls src include ml tests scripts docs
+docs:
+PROJECT_REPORT.md
+evidence
+
+include:
+config.h
+dashboard.h
+logger.h
+ml.h
+monitor.h
+platform.h
+server.h
+simulation.h
+terminal.h
+vehicle.h
+
+ml:
+__pycache__
+analyze_labels.py
+data
+model
+predict.py
+reports
+requirements.txt
+train_model.py
+
+scripts:
+_w.sh
+linux_demo.sh
+
+src:
+dashboard.c
+logger.c
+main.c
+ml.c
+monitor.c
+platform.c
+server.c
+simulation.c
+terminal.c
+vehicle.c
+
+tests:
+__pycache__
+conftest.py
+test_api.sh
+test_ml.py
+test_ml_integration.sh
+test_monitor.c
+$ wc -l src/*.c include/*.h | tail -1
+  3246 total
+$ find . -name '*.c' -o -name '*.py' -o -name '*.sh' | grep -v build | sort
+./ml/analyze_labels.py
+./ml/predict.py
+./ml/train_model.py
+./scripts/_w.sh
+./scripts/linux_demo.sh
+./src/dashboard.c
+./src/logger.c
+./src/main.c
+./src/ml.c
+./src/monitor.c
+./src/platform.c
+./src/server.c
+./src/simulation.c
+./src/terminal.c
+./src/vehicle.c
+./start.sh
+./tests/conftest.py
+./tests/test_api.sh
+./tests/test_ml.py
+./tests/test_ml_integration.sh
+./tests/test_monitor.c
+
+==================================================================
+ STEP 3: GCC compilation - by hand, one command
+==================================================================
+$ gcc -std=c11 -Wall -Wextra -Wpedantic -O2 -Iinclude -D_POSIX_C_SOURCE=200809L src/*.c -o build/svsm_manual
+$ ls -l build/svsm_manual && file build/svsm_manual 2>/dev/null | cut -c1-110
+-rwxrwxrwx 1 ayush ayush 77400 Nov 23 19:17 build/svsm_manual
+build/svsm_manual: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /l
+
+==================================================================
+ STEP 4: Makefile build (incremental, with dependency tracking)
+==================================================================
+$ make clean
+Cleaned build directory.
+$ make
+  CC    src/dashboard.c
+  CC    src/logger.c
+  CC    src/main.c
+  CC    src/ml.c
+  CC    src/monitor.c
+  CC    src/platform.c
+  CC    src/server.c
+  CC    src/simulation.c
+  CC    src/terminal.c
+  CC    src/vehicle.c
+  LINK  build/svsm
+Build complete -> build/svsm
+$ make --dry-run run | head -3
+echo "Build complete -> build/svsm"
+./build/svsm
+$ make help
+Targets:
+  all (default)  compile the application
+  run            compile and start the interactive dashboard
+  demo           run a scripted 40 s scenario (no keyboard needed)
+  start          build + start the C backend + open the browser (one command)
+  serve          C backend + web dashboard at http://localhost:8080
+  test-api       start the server and test the API with curl
+  history        print the last 20 alert-history records
+  test           compile and run unit tests
+  ml-setup       pip install the Python ML dependencies
+  ml-train       train + evaluate the ML model (ml/reports/)
+  ml-test        Python tests of the predictor
+  test-ml        C <-> Python integration tests (CLI)
+  test-all       every test suite
+  linux-demo     scripted Linux demonstration (gcc, make, shell, logs, ML)
+  debug          rebuild with debug symbols + sanitizers
+  clean          remove build/
+  distclean      remove build/ and logs/
+
+==================================================================
+ STEP 5: Dataset handling with Linux text tools (head, wc, awk, sort, uniq)
+==================================================================
+$ head -5 ml/data/vehicle_risk_dataset.csv
+speed,temperature,fuel,distance,seatbelt,risk
+156,76,40,39.86,0,High
+5,113,72,5.47,1,High
+13,120,10,30.98,0,Moderate
+128,106,26,34.33,0,High
+$ wc -l ml/data/vehicle_risk_dataset.csv
+10001 ml/data/vehicle_risk_dataset.csv
+$ tail -n +2 ml/data/vehicle_risk_dataset.csv | cut -d, -f6 | sort | uniq -c | sort -rn
+   4902 High
+   3696 Moderate
+   1402 Low
+$ awk -F, 'NR>1 {s[$6]+=$1; n[$6]++} END {for (k in s) printf "%-9s mean speed %.1f km/h (%d rows)\n", k, s[k]/n[k], n[k]}' ml/data/vehicle_risk_dataset.csv
+Moderate mean speed 68.5 km/h (3696 rows)
+High     mean speed 103.0 km/h (4902 rows)
+Low      mean speed 34.1 km/h (1402 rows)
+
+==================================================================
+ STEP 6: Train + evaluate the ML model (Python / scikit-learn)
+==================================================================
+$ /mnt/c/Users/Omen/AppData/Local/Programs/Python/Python313/python.exe ml/train_model.py
+# ML model evaluation
+
+Dataset: `ml/data/vehicle_risk_dataset.csv` (10000 clean rows). Split: 8000 train / 2000 test (stratified, seed 42).
+
+| Model | Accuracy | Precision (macro) | Recall (macro) | F1 (macro) | 5-fold CV acc |
+|---|---|---|---|---|---|
+| Decision Tree (baseline) | 0.9960 | 0.9966 | 0.9971 | 0.9968 | 0.9980 � 0.0009 |
+| **Random Forest (selected)** | 0.9960 | 0.9965 | 0.9972 | 0.9968 | 0.9970 � 0.0012 |
+
+## Per-class results (Random Forest, test set)
+
+| Class | Precision | Recall | F1 | Support |
+|---|---|---|---|---|
+| Low | 1.0000 | 1.0000 | 1.0000 | 281 |
+| Moderate | 0.9906 | 0.9986 | 0.9946 | 739 |
+| High | 0.9990 | 0.9929 | 0.9959 | 980 |
+
+## Confusion matrix (rows = actual, columns = predicted)
+
+| | pred Low | pred Moderate | pred High |
+|---|---|---|---|
+| **actual Low** | 281 | 0 | 0 |
+| **actual Moderate** | 0 | 738 | 1 |
+| **actual High** | 0 | 7 | 973 |
+
+## Feature importance (Random Forest)
+
+| Feature | Importance | Mutual information | Corr. with risk |
+|---|---|---|---|
+$ ls -l ml/model ml/reports
+ml/model:
+total 4216
+-rwxrwxrwx 1 ayush ayush 4315580 Nov 23 19:18 risk_model.joblib
+
+ml/reports:
+total 56
+-rwxrwxrwx 1 ayush ayush    95 Nov 23 19:18 confusion_matrix.csv
+-rwxrwxrwx 1 ayush ayush 21581 Nov 23 19:18 confusion_matrix.png
+-rwxrwxrwx 1 ayush ayush 18888 Nov 23 19:18 feature_importance.png
+-rwxrwxrwx 1 ayush ayush  1771 Nov 23 18:59 label_analysis.md
+-rwxrwxrwx 1 ayush ayush  2642 Nov 23 19:18 metrics.json
+-rwxrwxrwx 1 ayush ayush  1239 Nov 23 19:18 metrics.md
+
+==================================================================
+ STEP 7: C <-> Python integration: one prediction from the shell (shell loop over scenarios)
+==================================================================
+$ cat build/scenarios.txt
+safe-driving     50  85 70 40 1
+parked            0  70 60 30 1
+fast-no-belt    150  85 60 40 0
+low-fuel         50  85  3 40 1
+overheat+close   70 115 60  2 1
+bad-input       400  85 70 40 1
+
+[safe-driving]  speed=50 temp=85 fuel=70 dist=40 belt=1
+$ build/svsm --predict 50 85 70 40 1
+ML risk: Low (confidence 99.6%)  P(Low)=0.996 P(Moderate)=0.004 P(High)=0.000
+exit code: 0
+
+[parked]  speed=0 temp=70 fuel=60 dist=30 belt=1
+$ build/svsm --predict 0 70 60 30 1
+ML risk: Low (confidence 99.1%)  P(Low)=0.991 P(Moderate)=0.009 P(High)=0.000
+exit code: 0
+
+[fast-no-belt]  speed=150 temp=85 fuel=60 dist=40 belt=0
+$ build/svsm --predict 150 85 60 40 0
+ML risk: High (confidence 99.7%)  P(Low)=0.001 P(Moderate)=0.002 P(High)=0.997
+exit code: 0
+
+[low-fuel]  speed=50 temp=85 fuel=3 dist=40 belt=1
+$ build/svsm --predict 50 85 3 40 1
+ML risk: Moderate (confidence 95.0%)  P(Low)=0.032 P(Moderate)=0.950 P(High)=0.018
+exit code: 0
+
+[overheat+close]  speed=70 temp=115 fuel=60 dist=2 belt=1
+$ build/svsm --predict 70 115 60 2 1
+ML risk: High (confidence 98.1%)  P(Low)=0.000 P(Moderate)=0.019 P(High)=0.981
+exit code: 0
+
+[bad-input]  speed=400 temp=85 fuel=70 dist=40 belt=1
+$ build/svsm --predict 400 85 70 40 1
+Invalid input: values out of range (speed 0..220, temp -20..150, fuel 0..100, dist 0..200, belt 0/1)
+exit code: 2
+
+==================================================================
+ STEP 8: Execution: scripted 40 s drive - rule-based alerts AND ML prediction on the dashboard
+==================================================================
+$ grep -c 'ML DRIVER RISK' build/demo_output.txt
+40
+$ sed -n '/Demo finished/!p' build/demo_output.txt | tail -46
+  │  LOW   ██████████████████░░  88%                         │
+  │  MOD   ██░░░░░░░░░░░░░░░░░░  10%                         │
+  │  HIGH  ░░░░░░░░░░░░░░░░░░░░   2%                         │
+  └──────────────────────────────────────────────────────────┘
+  TELEMETRY     SPEED ── ▂▂▂▂▂▃▃▃▃▄▄▄▄▄▅▅▅▅▅▅▅▅▅▅▅▅▄▄▃▃▃▂▂▁▁▁ 20
+                RISK  ── ▂▂▂▂▂▂▂▂▅▅▅▅▅▅▅▅▅▅▅▅████████████▅▅▂▂  ▁ low ▄ mod █ high
+
+  SVSM  /  SMART VEHICLE MONITOR
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ● LIVE                   00:00:40    TRIP  0.87 km
+  ┌─ SPEED ──────────────────────────────────────────────────┐
+  │                            20                            │
+  │                           km/h                           │
+  │   0 ━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 220         │
+  │                         LIMIT 80                         │
+  │  ✔ WITHIN LIMIT                                          │
+  └──────────────────────────────────────────────────────────┘
+  VEHICLE HEALTH
+  ┌─────────────────────────────┬────────────────────────────┐
+  │ FUEL                        │ ENGINE                     │
+  │   7%  [█░░░░░░░░░]          │  89°C [██████░░░░]         │
+  │  ! LOW FUEL                 │  ✔ NORMAL                  │
+  ├─────────────────────────────┼────────────────────────────┤
+  │ OBSTACLE                    │ SEATBELT                   │
+  │  48.2 m  [ SAFE ]           │ OFF      [ WARNING ]       │
+  └─────────────────────────────┴────────────────────────────┘
+  SAFETY ASSESSMENT
+  ┌─ RULE-BASED MONITOR ─────────────────────────────────────┐
+  │  !  WARNING     SAFETY STATUS: 2 ALERTS                  │
+  │  !  Fuel                6.8%                             │
+  │  !  Seatbelt            OFF at 20 km/h                   │
+  │                                                          │
+  │                                                          │
+  │                                                          │
+  └──────────────────────────────────────────────────────────┘
+  ML DRIVER RISK
+  ┌─ RANDOM FOREST (SEPARATE FROM RULES) ────────────────────┐
+  │  [ LOW ]     confidence  85%    [P] pause                │
+  │  LOW   █████████████████░░░  85%                         │
+  │  MOD   ███░░░░░░░░░░░░░░░░░  13%                         │
+  │  HIGH  ░░░░░░░░░░░░░░░░░░░░   2%                         │
+  └──────────────────────────────────────────────────────────┘
+  TELEMETRY     SPEED ── ▂▂▂▂▃▃▃▃▄▄▄▄▄▅▅▅▅▅▅▅▅▅▅▅▅▄▄▃▃▃▂▂▁▁▁▁ 20
+                RISK  ── ▂▂▂▂▂▂▂▅▅▅▅▅▅▅▅▅▅▅▅████████████▅▅▂▂▂  ▁ low ▄ mod █ high
+
+
+
+==================================================================
+ STEP 9: File handling: the alert-history log (grep, awk, sort, uniq, tail)
+==================================================================
+$ head -3 build/demo_alerts.log
+[2026-11-23 19:18:19] [WARNING ] SEATBELT : Seatbelt not fastened (8 km/h) | spd=8 fuel=39.9 temp=29 obst=200.0 belt=OFF
+[2026-11-23 19:18:19] [WARNING ] OVERSPEED: Overspeed 82 km/h (limit 80) | spd=82 fuel=33.9 temp=67 obst=149.1 belt=ON
+[2026-11-23 19:18:20] [CRITICAL] OVERSPEED: OVERSPEED 122 km/h (limit 80) | spd=122 fuel=26.5 temp=88 obst=121.7 belt=ON
+$ wc -l build/demo_alerts.log
+6 build/demo_alerts.log
+$ grep -c CRITICAL build/demo_alerts.log; grep -c WARNING build/demo_alerts.log
+2
+4
+$ grep -o 'OVERSPEED\|LOW_FUEL\|OVERHEAT\|OBSTACLE\|SEATBELT' build/demo_alerts.log | sort | uniq -c | sort -rn
+      3 SEATBELT
+      3 OVERSPEED
+      1 OVERHEAT
+      1 LOW_FUEL
+$ ./build/svsm --history 5 --log build/demo_alerts.log
+[2026-11-23 19:18:19] [WARNING ] OVERSPEED: Overspeed 82 km/h (limit 80) | spd=82 fuel=33.9 temp=67 obst=149.1 belt=ON
+[2026-11-23 19:18:20] [CRITICAL] OVERSPEED: OVERSPEED 122 km/h (limit 80) | spd=122 fuel=26.5 temp=88 obst=121.7 belt=ON
+[2026-11-23 19:18:20] [WARNING ] OVERHEAT : Engine hot 101 C (limit 100) | spd=130 fuel=19.7 temp=101 obst=97.6 belt=ON
+[2026-11-23 19:18:20] [CRITICAL] SEATBELT : SEATBELT OFF at 130 km/h (>40) | spd=130 fuel=18.4 temp=103 obst=96.6 belt=OFF
+[2026-11-23 19:18:20] [WARNING ] LOW_FUEL : Low fuel 14.3% (min 15%) | spd=130 fuel=14.3 temp=107 obst=82.4 belt=OFF
+
+==================================================================
+ STEP 10: ML risk over the drive (grep / sort / uniq on the demo output)
+==================================================================
+$ grep -o '\[ \(LOW\|MODERATE\|HIGH\) \]' build/demo_output.txt | sort | uniq -c
+     12 [ HIGH ]
+     14 [ LOW ]
+     14 [ MODERATE ]
+
+==================================================================
+ STEP 11: Graceful degradation: ML off or Python missing - rule-based monitoring keeps working
+==================================================================
+$ ./build/svsm --demo 12 --seed 7 --no-color --no-ml --log build/x.log 2>&1 | grep -E 'UNAVAILABLE|Overspeed' | sort -u | head -3
+  │  !  Overspeed           82 km/h  /  limit 80             │
+  │  UNAVAILABLE  (rule-based alerts still active)           │
+$ SVSM_PYTHON=no_such_python ./build/svsm --demo 12 --seed 7 --no-color --log build/x.log 2>&1 | grep -E 'ML disabled|OVERSPEED' | sort -u | head -3
+  │  ▲ OVERSPEED                                             │
+ML disabled: cannot run 'no_such_python' (is Python installed?)
+
+==================================================================
+ STEP 12: Process view: the C server starts the Python predictor as a child process (ps, curl, kill)
+==================================================================
+$ ps -o pid,ppid,etime,cmd -p 1065; ps -o pid,ppid,cmd --ppid 1065
+    PID    PPID     ELAPSED CMD
+   1065     820       00:01 ./build/svsm --serve 18090 --web web --log build/serve.log
+    PID    PPID CMD
+   1068    1065 /init /mnt/c/Users/Omen/AppData/Local/Programs/Python/Python313/python.exe /mnt/c/Users/Omen/AppData/Local/Programs/Python/Python313/python.exe ml/predict.py --serve
+$ curl -s 'http://127.0.0.1:18090/api/cmd?a=set&manual=1&speed=150&fuel=3&temp=113&obst=2&belt=0' | grep -o '"count":[0-9]*\|"ml":{[^}]*}'
+"count":5
+"ml":{"on":true,"label":"High","level":2,"conf":1.000,"probs":[0.000,0.000,1.000]}
+server stopped; leftover predictor processes: 0
+
+==================================================================
+ STEP 13: Testing: unit tests (C), Python tests, C<->Python integration, HTTP API
+==================================================================
+  [PASS] obstacle pop-up raises alert
+  [PASS] cooling fault keeps engine hot while driving
+
+56 checks, 0 failed
+----------------------------------------------------------------------
+Ran 25 tests in 9.424s
+
+OK
+  [PASS] API survives out-of-range input
+
+41 passed, 0 failed
+  [PASS] clear empties the history
+
+26 checks, 0 failed
+
+==================================================================
+ STEP 14: Debugging: rebuild with AddressSanitizer + UBSan and re-run the tests
+==================================================================
+Build complete -> build/svsm
+56 checks, 0 failed
+(valgrind not installed - sanitizers used instead)
+
+Demo complete.

@@ -344,3 +344,9 @@ dialog.ask { width: min(380px, calc(100vw - 24px)); text-align: center; padding:
 @media (max-width: 560px) { .link b { display: none; } .link { padding: 5px 9px; } }
 @media (max-width: 420px) { .tab [data-ic] { display: none; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ML risk chip (inside the status banner) */
+.ml-chip { --mc: var(--muted); font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--mc) 45%, transparent);
+  color: var(--mc); white-space: nowrap; flex: none; }
+.ml-chip b { font-weight: 700; }
+.ml-chip[data-level="ok"] { --mc: var(--ok); } .ml-chip[data-level="warn"] { --mc: var(--warn); } .ml-chip[data-level="crit"] { --mc: var(--crit); }

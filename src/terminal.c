@@ -43,9 +43,14 @@ int term_read_key(int timeout_ms)
     for (;;) {
         if (_kbhit()) {
             int c = _getch();
-            if (c == 0 || c == 0xE0) {          /* arrow / function key: swallow */
-                (void)_getch();
-                return -1;
+            if (c == 0 || c == 0xE0) {          /* arrow / function key */
+                switch (_getch()) {
+                case 72: return KEY_UP;
+                case 80: return KEY_DOWN;
+                case 77: return KEY_RIGHT;
+                case 75: return KEY_LEFT;
+                default: return -1;
+                }
             }
             return c == 3 ? 'q' : c;            /* Ctrl+C -> quit */
         }
@@ -162,7 +167,26 @@ int term_read_key(int timeout_ms)
     ssize_t n = read(STDIN_FILENO, &ch, 1);
     if (n == 0)
         return 'q';                      /* EOF on stdin: quit cleanly */
-    return n < 0 ? -1 : (int)ch;
+    if (n < 0)
+        return -1;
+    if (ch == 27) {                      /* ESC [ A/B/C/D = arrow keys */
+        unsigned char seq[2];
+        struct timeval t = { 0, 30000 };
+        fd_set f2;
+        FD_ZERO(&f2);
+        FD_SET(STDIN_FILENO, &f2);
+        if (select(STDIN_FILENO + 1, &f2, NULL, NULL, &t) > 0 && read(STDIN_FILENO, &seq[0], 1) == 1
+            && seq[0] == '[' && read(STDIN_FILENO, &seq[1], 1) == 1) {
+            switch (seq[1]) {
+            case 'A': return KEY_UP;
+            case 'B': return KEY_DOWN;
+            case 'C': return KEY_RIGHT;
+            case 'D': return KEY_LEFT;
+            }
+        }
+        return -1;
+    }
+    return (int)ch;
 }
 
 bool term_prompt(const char *prompt, char *buf, int size)

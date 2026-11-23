@@ -21,6 +21,7 @@ typedef struct {
     bool          seatbelt_fastened;  /**< driver seatbelt status           */
 
     float         target_speed_kmh;   /**< driver's requested speed (sim)   */
+    float         temp_bias_c;        /**< injected cooling fault (sim), +deg C */
     float         odometer_km;        /**< distance travelled this run      */
     unsigned long ticks;              /**< elapsed simulation seconds       */
     SimState      state;              /**< running / stopped                */

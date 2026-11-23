@@ -47,7 +47,8 @@ DEPS     := $(OBJS:.o=.d)
 LIB_OBJS  := $(filter-out $(BUILD)/main.o,$(OBJS))
 TEST_BIN  := $(BUILD)/test_monitor
 
-.PHONY: all start run demo serve test test-api debug history clean distclean help dist dist-windows dist-linux
+.DEFAULT_GOAL := all
+.PHONY: ml-setup ml-train ml-test test-ml test-all linux-demo all start run demo serve test test-api debug history clean distclean help dist dist-windows dist-linux
 
 # ready-to-run programs for laptops without a compiler (see dist/)
 DIST     := dist
@@ -99,6 +100,26 @@ test-api: all
 history: all
 	@./$(BUILD)/$(TARGET) --history 20
 
+# ---- ML module (Python / scikit-learn) --------------------------------
+PYTHON ?= python3
+
+ml-setup:
+	$(PYTHON) -m pip install -r ml/requirements.txt
+
+ml-train:
+	$(PYTHON) ml/train_model.py
+
+ml-test:
+	$(PYTHON) -m unittest discover -s tests -p "test_ml*.py" -v
+
+test-ml: all
+	@sh $(TEST_DIR)/test_ml_integration.sh $(BUILD)/$(TARGET)
+
+test-all: test ml-test test-ml test-api
+
+linux-demo: all
+	@sh scripts/linux_demo.sh
+
 test: $(TEST_BIN)
 	@./$(TEST_BIN)
 
@@ -128,6 +149,12 @@ help:
 	@echo "  test-api       start the server and test the API with curl"
 	@echo "  history        print the last 20 alert-history records"
 	@echo "  test           compile and run unit tests"
+	@echo "  ml-setup       pip install the Python ML dependencies"
+	@echo "  ml-train       train + evaluate the ML model (ml/reports/)"
+	@echo "  ml-test        Python tests of the predictor"
+	@echo "  test-ml        C <-> Python integration tests (CLI)"
+	@echo "  test-all       every test suite"
+	@echo "  linux-demo     scripted Linux demonstration (gcc, make, shell, logs, ML)"
 	@echo "  debug          rebuild with debug symbols + sanitizers"
 	@echo "  clean          remove build/"
 	@echo "  distclean      remove build/ and logs/"

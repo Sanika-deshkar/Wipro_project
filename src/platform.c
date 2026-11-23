@@ -19,6 +19,12 @@
 #include <io.h>
 #include <shellapi.h>
 
+/* very old MinGW headers lack these */
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+#define svsm_tick_ms() ((ULONGLONG)GetTickCount())   /* wraps after 49 days; fine for a UI clock */
+
 void plat_init(void)
 {
     WSADATA wsa;
@@ -34,7 +40,7 @@ void plat_init(void)
 long plat_now_ms(void)
 {
     static ULONGLONG base = 0;
-    ULONGLONG now = GetTickCount64();
+    ULONGLONG now = svsm_tick_ms();
     if (base == 0)
         base = now;
     return (long)(now - base);
@@ -43,6 +49,22 @@ long plat_now_ms(void)
 void plat_mkdir(const char *path)         { _mkdir(path); }
 bool plat_stdout_is_tty(void)             { return _isatty(_fileno(stdout)) != 0; }
 bool plat_stdin_is_tty(void)              { return _isatty(_fileno(stdin)) != 0; }
+
+int plat_term_rows(void)
+{
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info))
+        return 0;
+    return info.srWindow.Bottom - info.srWindow.Top + 1;
+}
+
+int plat_term_cols(void)
+{
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info))
+        return 0;
+    return info.srWindow.Right - info.srWindow.Left + 1;
+}
 
 void plat_open_browser(const char *url)
 {
@@ -55,6 +77,7 @@ void plat_open_browser(const char *url)
 /* ------------------------------------------------------------------ */
 #include <time.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -70,6 +93,22 @@ long plat_now_ms(void)
 void plat_mkdir(const char *path)         { mkdir(path, 0755); }
 bool plat_stdout_is_tty(void)             { return isatty(STDOUT_FILENO) != 0; }
 bool plat_stdin_is_tty(void)              { return isatty(STDIN_FILENO) != 0; }
+
+int plat_term_rows(void)
+{
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0)
+        return 0;
+    return ws.ws_row;
+}
+
+int plat_term_cols(void)
+{
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0)
+        return 0;
+    return ws.ws_col;
+}
 
 /** True when running inside WSL (the browser then lives on the Windows side). */
 static bool running_in_wsl(void)
